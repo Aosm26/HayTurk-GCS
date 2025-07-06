@@ -157,9 +157,12 @@ class GroundControlStation(QMainWindow):
         self.camera_fps = 30
         
         # MBTiles server setup
-        self.mbtiles_path = 'map/map_ilk_ankara.mbtiles'  # Dizindeki map.mbtiles dosyası
+        self.mbtiles_path = 'map/map.mbtiles'  # Dizindeki map.mbtiles dosyası
         self.mbtiles_port = 8080
         self.tile_server_proc = None  # mbtiles_server.py başlatmak için
+        
+        # Harita seçimi için
+        self.available_maps = self.get_available_maps()
         
         self.init_ui()
         self.setup_timers()
@@ -236,6 +239,25 @@ class GroundControlStation(QMainWindow):
         serial_layout.addLayout(conn_layout)
         
         layout.addWidget(serial_group)
+        
+        # Harita Seçimi section
+        map_group = QGroupBox("Harita Seçimi")
+        map_layout = QVBoxLayout(map_group)
+        
+        map_layout.addWidget(QLabel("Mevcut Haritalar:"))
+        self.map_combo = QComboBox()
+        self.refresh_maps()
+        map_layout.addWidget(self.map_combo)
+        
+        self.refresh_maps_btn = QPushButton("Haritaları Yenile")
+        self.refresh_maps_btn.clicked.connect(self.refresh_maps)
+        map_layout.addWidget(self.refresh_maps_btn)
+        
+        self.change_map_btn = QPushButton("Haritayı Değiştir")
+        self.change_map_btn.clicked.connect(self.change_map)
+        map_layout.addWidget(self.change_map_btn)
+        
+        layout.addWidget(map_group)
         
         # Status section
         status_group = QGroupBox("System Status")
@@ -693,6 +715,48 @@ class GroundControlStation(QMainWindow):
             self.status_label.setStyleSheet("color: red; font-weight: bold;")
         
         self.telemetry_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
+    
+    def get_available_maps(self):
+        """Get list of available map files in the map directory"""
+        maps = []
+        map_dir = 'map'
+        
+        if os.path.exists(map_dir):
+            for file in os.listdir(map_dir):
+                if file.endswith('.mbtiles'):
+                    maps.append(os.path.join(map_dir, file))
+        
+        return maps
+    
+    def refresh_maps(self):
+        """Refresh the available maps list and update combo box"""
+        self.available_maps = self.get_available_maps()
+        self.map_combo.clear()
+        
+        if self.available_maps:
+            for map_path in self.available_maps:
+                map_name = os.path.basename(map_path)
+                self.map_combo.addItem(map_name, map_path)
+            
+            # Select the first map by default
+            if self.map_combo.count() > 0:
+                self.map_combo.setCurrentIndex(0)
+        else:
+            self.map_combo.addItem("No maps found")
+    
+    def change_map(self):
+        """Change the current map"""
+        if self.map_combo.currentData():
+            new_map_path = self.map_combo.currentData()
+            if new_map_path != self.mbtiles_path:
+                self.mbtiles_path = new_map_path
+                self.telemetry_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Map changed to: {os.path.basename(new_map_path)}\n")
+                
+                # Restart the tile server with new map
+                if self.tile_server_proc:
+                    self.tile_server_proc.terminate()
+                    self.tile_server_proc.wait()
+                self.start_mbtiles_server_subprocess()
     
     def closeEvent(self, event):
         """Handle application close event"""
